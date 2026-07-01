@@ -26,9 +26,7 @@ Since this uses Blueprint, this allows to define, reuse and provide a unique nam
 |---|-------|-----------------|
 | 1 | My listening streak keeps resetting | `streak_service.py` |
 | 2 | Friends Listening Now shows people from yesterday | `feed_service.py` |
-| 3 | The same song keeps showing up twice in search | `search_service.py` |
 | 4 | I got notified when a friend added my song to a playlist but not when they rated it | `notification_service.py` |
-| 5 | The last song in a playlist never shows up | `playlist_service.py` |
 
 #### Bug 1
 
@@ -48,13 +46,61 @@ Since this uses Blueprint, this allows to define, reuse and provide a unique nam
 ### Fix
 
 
-#### Bug 3
+#### Bug 3: The same song keeps showing up twice in search
 
 ### Reproduction of bug
 
+To reproduce the bug, I first took a look at search_songs() `search_service.py`. I saw that it used the song_tags table to get the list of tags and hypothesized that this could be the issue.
+I then searched for songs that have more than one tag:
+
+    SELECT song.id, song.title, GROUP_CONCAT(tag.name, ', ') AS tags
+    FROM song
+    LEFT JOIN song_tags ON song.id = song_tags.song_id
+    LEFT JOIN tag ON tag.id = song_tags.tag_id
+    GROUP BY song.id, song.title;
+
+I chose Crown Heights as the song since it had 3 tags:
+
+    ["rap","hip-hop","boom bap"],"title":"Crown Heights Anthem"]
+I then hit the search endpoint using the song name:
+
+    curl -G "http://localhost:9000/songs/search" --data-urlencode "q=Crown Heights"
+
+
+Surprisingly, it gave me only one result:
+
+    {"count":1,"results":[{"album":null,"artist":"Borough Kings","genre":"rap","id":"48508db6-8b2c-4a82-b064-687df84a075a","share_note":null,"shared_at":"2026-06-30T20:06:15.807978","shared_by":"f597475e-3afb-42e6-8740-30df30635a5d","tags":["rap","hip-hop","boom bap"],"title":"Crown Heights Anthem"}]}
+
+
 ### Root cause
 
+Using AI and a bunch of searches, I came across the following explanation:
+    session.query(Song)...all() (legacy Query) generates the same SQL as 2.0-style select(), but adds an extra post-processing step that auto-dedupes full-entity results by primary key.
+
+This explained why even though the join happened with `song_tags`, it automatically deduplicated Song results by primary key. 
+
+Here's a query that will produce duplicate song results for each tag:
+
+    stmt = (
+    #     db.session.query(Song)
+    #     .outerjoin(song_tags, Song.id == song_tags.c.song_id)
+    #     .filter(
+    #         db.or_(
+    #             Song.title.ilike(f"%{query}%"),
+    #             Song.artist.ilike(f"%{query}%"),
+    #         )
+    #     )
+    # )
+    
+    # results = db.session.execute(stmt.statement).scalars().all()
+
+
+    {"count":3,"results":[{"album":null,"artist":"Borough Kings","genre":"rap","id":"48508db6-8b2c-4a82-b064-687df84a075a","share_note":null,"shared_at":"2026-06-30T20:06:15.807978","shared_by":"f597475e-3afb-42e6-8740-30df30635a5d","tags":["rap","hip-hop","boom bap"],"title":"Crown Heights Anthem"},{"album":null,"artist":"Borough Kings","genre":"rap","id":"48508db6-8b2c-4a82-b064-687df84a075a","share_note":null,"shared_at":"2026-06-30T20:06:15.807978","shared_by":"f597475e-3afb-42e6-8740-30df30635a5d","tags":["rap","hip-hop","boom bap"],"title":"Crown Heights Anthem"},{"album":null,"artist":"Borough Kings","genre":"rap","id":"48508db6-8b2c-4a82-b064-687df84a075a","share_note":null,"shared_at":"2026-06-30T20:06:15.807978","shared_by":"f597475e-3afb-42e6-8740-30df30635a5d","tags":["rap","hip-hop","boom bap"],"title":"Crown Heights Anthem"}]}
+
+Note that there are multiple ways to remove the deduplication processing as it only works when querying full Entities.
+
 ### Fix
+No fix is needed with the current code and the test `test_search_no_duplicates_single_tag_song` under `test_search.py` passes as well. This is a classic case of external libraries and behavior affecting the same piece of code, where ghe code on its own reads as a potential bug but the underlying behavior produces a different result that no tests could have caught. 
 
 
 #### Bug 4
