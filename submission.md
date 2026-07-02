@@ -48,7 +48,7 @@ Removing `today.weekday() != 6` from the condition makes sure that `days_since_l
 #### Side effects
 
 `record_listening_event` is the function that calls `update_listening_streak`.Hence unit testing and user testing should and did confirm that no functionality broke for either functions. 
-
+-->
 
 #### Bug 2: Friends Listening Now shows people from yesterday
 
@@ -131,7 +131,6 @@ Since live testing against time is not always feasible, I also added tests simul
 ## Side effects
 
 Using regression and user testing, it is confirmed that no functionality broke. Moreover, `get_friends_listening_now` is only present for `feed.py` and hence does not break other services.
--->
 
 #### Bug 3: The same song keeps showing up twice in search
 
