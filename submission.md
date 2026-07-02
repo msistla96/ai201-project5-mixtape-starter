@@ -19,7 +19,7 @@ This calls `create_playlist` from the `playlist_service.py`, searches the user i
 Then creates a Playlist object and inserts into the Playlists table.
 Since this uses Blueprint, this allows to define, reuse and provide a unique namespace for any playlist related routing. 
 
-<!-- #### Bug 1: My listening streak keeps resetting
+#### Bug 1: My listening streak keeps resetting
 
 ### Reproduction of bug
 
@@ -48,7 +48,6 @@ Removing `today.weekday() != 6` from the condition makes sure that `days_since_l
 #### Side effects
 
 `record_listening_event` is the function that calls `update_listening_streak`.Hence unit testing and user testing should and did confirm that no functionality broke for either functions. 
--->
 
 #### Bug 2: Friends Listening Now shows people from yesterday
 
