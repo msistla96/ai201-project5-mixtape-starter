@@ -19,32 +19,119 @@ This calls `create_playlist` from the `playlist_service.py`, searches the user i
 Then creates a Playlist object and inserts into the Playlists table.
 Since this uses Blueprint, this allows to define, reuse and provide a unique namespace for any playlist related routing. 
 
-
-### Bugs
-
-| # | Title | Affected service |
-|---|-------|-----------------|
-| 1 | My listening streak keeps resetting | `streak_service.py` |
-| 2 | Friends Listening Now shows people from yesterday | `feed_service.py` |
-| 4 | I got notified when a friend added my song to a playlist but not when they rated it | `notification_service.py` |
-
-#### Bug 1
+<!-- #### Bug 1: My listening streak keeps resetting
 
 ### Reproduction of bug
 
+When running pytests/tests, `test_streak_increments_on_sunday` from  `test_streaks.py` threw an error. 
+
+### How to get the root cause
+
+I then traced to the `update_listening_streak` function and checked what could trigger the streak reset.
+
+1. Line 58: If the `last_listened` field for the user is None i.e first song they listened to, it resets the streak. 
+I ruled this out as the issue since this service always sets it. 
+2. Line 73: If `days_since_last` > 1 i.e more than one day since they last listened or
+`days_since_last` = 1 and `today.weekday() == 6` i.e its only been one day since they last listened but today is Sunday,
+then it resets the streak. If a user had to see a streak resetting, it would happen when the day they listen is a Sunday even if it's only been a day since the last listen or its been more than one day since the last listen.
+
 ### Root cause
 
-### Fix
+In `update_listening_streak`, Line 73 introduces a condition `today.weekday() != 6`. The only valid case for a streak to reset is when it's been more than a day. However this code also resets when the current day is not a Sunday, which has nothing to do with a streak.
+
+### Fix and side effects
+
+#### Fix
+
+Removing `today.weekday() != 6` from the condition makes sure that `days_since_last` is the only relevant check that's done.
+
+#### Side effects
+
+`record_listening_event` is the function that calls `update_listening_streak`.Hence unit testing and user testing should and did confirm that no functionality broke for either functions. 
 
 
-#### Bug 2
+#### Bug 2: Friends Listening Now shows people from yesterday
 
 ### Reproduction of bug
 
+Get a user id from the User table. Make a curl request to `GET feed/<user_id>/listening-now`
+
+    curl -X GET http://localhost:9000/feed/178764e6-ca0f-4ab0-b3a1-693744f26b7a/listening-now 
+
+    {"count":3,"feed":[{"friend":{"id":"f633d101-ae06-4bdb-b4de-13580daad5dc","last_listened_at":"2026-06-30T23:50:40.569017","listening_streak":3,"username":"darius"},"listened_at":"2026-07-01T23:40:40.569017","song":{"album":null,"artist":"The Wanderers","genre":"indie rock","id":"3ae88dfb-ac1b-4d7c-bfec-fef14ecccf55","share_note":null,"shared_at":"2026-06-26T23:50:40.569017","shared_by":"178764e6-ca0f-4ab0-b3a1-693744f26b7a","tags":[],"title":"Midnight Drive"}},{"friend":{"id":"1a0deefd-7047-4599-b67b-bf8909737576","last_listened_at":null,"listening_streak":0,"username":"simone"},"listened_at":"2026-07-01T23:35:40.569017","song":{"album":null,"artist":"Elara Moon","genre":"ambient","id":"a9db71fe-f6ab-4554-9b13-f6dcdc3b4c52","share_note":null,"shared_at":"2026-06-26T23:50:40.569017","shared_by":"178764e6-ca0f-4ab0-b3a1-693744f26b7a","tags":[],"title":"Still Waters"}},{"friend":{"id":"33a0f114-2df8-4e20-af16-4cedba960551","last_listened_at":"2026-07-01T20:50:40.569017","listening_streak":12,"username":"kenji"},"listened_at":"2026-07-01T23:30:40.569017","song":{"album":null,"artist":"Coastal Highway","genre":"indie","id":"3af684aa-cb33-4954-b0dc-a49a7b08d1eb","share_note":null,"shared_at":"2026-06-26T23:50:40.569017","shared_by":"178764e6-ca0f-4ab0-b3a1-693744f26b7a","tags":[],"title":"First Light"}}]}
+
+Based on the return values, these are the following `listened_at` values:
+
+listened_at":"2026-07-01T23:40:40.569017
+listened_at":"2026-07-01T23:35:40.569017
+listened_at":"2026-07-01T23:30:40.569017
+
+Based on Line 112-117 in  `seed_data.py`, the recently listened events should be within the last 30 minutes threshold. 
+But based on the response from above, it is pulling every record beyond the threshold. 
+
+
+### How to get root cause
+
+From the same route I followed from reproduction, I traced the call from `listening-now` to `get_friends_listening_now` in `feed_service.py`. 
+
+
 ### Root cause
 
-### Fix
+Line 32 was where the valid dates were calculated:
+    cutoff = datetime.now(timezone.utc) - RECENT_THRESHOLD
+Line 13 has the `RECENT_THRESHOLD = timedelta(hours=24)`
+Line 45 filtered by each 
+    ListeningEvent.listened_at >= cutoff
 
+Putting this together, this meant that the `listened_at` timestamps could be behind upto 24 hours and before the present time and date. This did not match with the expectations set by `seed_data.py`. 
+
+### Fix and side effects
+
+## Fix
+
+The fix was to Line 13:
+    `RECENT_THRESHOLD = timedelta(minutes=30)`
+
+After making the change, I retested our reproduction scenario:
+
+Before 7pm
+
+curl -X GET http://localhost:9000/feed/178764e6-ca0f-4ab0-b3a1-693744f26b7a/listening-now
+{"count":3,"feed":[{"friend":{"id":"f633d101-ae06-4bdb-b4de-13580daad5dc","last_listened_at":"2026-06-30T23:50:40.569017","listening_streak":3,"username":"darius"},"listened_at":"2026-07-01T23:40:40.569017","song":{"album":null,"artist":"The Wanderers","genre":"indie rock","id":"3ae88dfb-ac1b-4d7c-bfec-fef14ecccf55","share_note":null,"shared_at":"2026-06-26T23:50:40.569017","shared_by":"178764e6-ca0f-4ab0-b3a1-693744f26b7a","tags":[],"title":"Midnight Drive"}},{"friend":{"id":"1a0deefd-7047-4599-b67b-bf8909737576","last_listened_at":null,"listening_streak":0,"username":"simone"},"listened_at":"2026-07-01T23:35:40.569017","song":{"album":null,"artist":"Elara Moon","genre":"ambient","id":"a9db71fe-f6ab-4554-9b13-f6dcdc3b4c52","share_note":null,"shared_at":"2026-06-26T23:50:40.569017","shared_by":"178764e6-ca0f-4ab0-b3a1-693744f26b7a","tags":[],"title":"Still Waters"}},{"friend":{"id":"33a0f114-2df8-4e20-af16-4cedba960551","last_listened_at":"2026-07-01T20:50:40.569017","listening_streak":12,"username":"kenji"},"listened_at":"2026-07-01T23:30:40.569017","song":{"album":null,"artist":"Coastal Highway","genre":"indie","id":"3af684aa-cb33-4954-b0dc-a49a7b08d1eb","share_note":null,"shared_at":"2026-06-26T23:50:40.569017","shared_by":"178764e6-ca0f-4ab0-b3a1-693744f26b7a","tags":[],"title":"First Light"}}]}
+
+
+At 7.06 pm
+curl -X GET http://localhost:9000/feed/178764e6-ca0f-4ab0-b3a1-693744f26b7a/listening-now
+{"count":1,"feed":[{"friend":{"id":"f633d101-ae06-4bdb-b4de-13580daad5dc","last_listened_at":"2026-06-30T23:50:40.569017","listening_streak":3,"username":"darius"},"listened_at":"2026-07-01T23:40:40.569017","song":{"album":null,"artist":"The Wanderers","genre":"indie rock","id":"3ae88dfb-ac1b-4d7c-bfec-fef14ecccf55","share_note":null,"shared_at":"2026-06-26T23:50:40.569017","shared_by":"178764e6-ca0f-4ab0-b3a1-693744f26b7a","tags":[],"title":"Midnight Drive"}}]}
+
+7:17 pm
+
+curl -X GET http://localhost:9000/feed/178764e6-ca0f-4ab0-b3a1-693744f26b7a/listening-now
+{"count":0,"feed":[]}
+
+
+Explanation for why the results changed correctly:
+
+The three events and their fixed timestamps:
+
+Friend	listened_at	Falls out of the 30-min window once "now" passes
+kenji	23:30:40	24:00:40
+simone	23:35:40	24:05:40
+darius	23:40:40	24:10:40
+First curl (count: 3): all three request cutoffs. Server "now" was still ≤ 24:00:40, so now − 30min ≤ 23:30:40, keeping kenji, simone, and darius all inside the window.
+
+Second curl (count: 1): by the time it re-ran, server "now" had passed 24:00:40 (and 24:05:40), pushing the cutoff past kenji's and simone's timestamps — now − 30min > 23:30:40 and > 23:35:40 — so they dropped out. Darius's 23:40:40 was still ≥ now − 30min, so he's the only one left.
+
+Validity going forward: darius will also disappear once real time passes 24:10:40 (i.e., 23:40:40 + 30min). After that, this same seeded data will return count: 0 for that user.
+
+## Regression Tests
+
+Since live testing against time is not always feasible, I also added tests simulating these scenarios under `tests/test_streaks.py` . With these tests present before, the bug would have been caught early on.
+
+## Side effects
+
+Using regression and user testing, it is confirmed that no functionality broke. Moreover, `get_friends_listening_now` is only present for `feed.py` and hence does not break other services.
+-->
 
 #### Bug 3: The same song keeps showing up twice in search
 
@@ -100,17 +187,76 @@ Here's a query that will produce duplicate song results for each tag:
 Note that there are multiple ways to remove the deduplication processing as it only works when querying full Entities.
 
 ### Fix
-No fix is needed with the current code and the test `test_search_no_duplicates_single_tag_song` under `test_search.py` passes as well. This is a classic case of external libraries and behavior affecting the same piece of code, where ghe code on its own reads as a potential bug but the underlying behavior produces a different result that no tests could have caught. 
+No fix is needed with the current code and the test `test_search_no_duplicates_single_tag_song` under `test_search.py` passes as well. This is a classic case of external libraries and behavior affecting the same piece of code, where ghe code on its own reads as a potential bug but the underlying behavior produces a different result that no tests could have caught.
 
 
-#### Bug 4
+#### Bug 4: I got notified when a friend added my song to a playlist but not when they rated it
 
 ### Reproduction of bug
 
+The seed data has an example at Line 171 where a notification was created for the above. Using this example, I obtained the following data needed:
+
+1. Song:
+2. Song sharer:
+3. Song listener/rater id:
+
+First request is to get the notifications for the song sharer:
+
+    curl -X GET "http://localhost:9000/users/178764e6-ca0f-4ab0-b3a1-693744f26b7a/notifications?unread_only=false"
+
+    {"count":1,"notifications":[{"body":"darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'.","created_at":"2026-07-01T23:50:40.594485","id":"1d3a183b-0aa1-4148-9173-046f304be6fe","read":false,"type":"song_added_to_playlist","user_id":"178764e6-ca0f-4ab0-b3a1-693744f26b7a"}]}
+
+
+Next request is to rate the song as the song listener
+
+    curl -X POST http://localhost:9000/songs/3ae88dfb-ac1b-4d7c-bfec-fef14ecccf55/rate \
+    -H "Content-Type: application/json" \
+    -d '{"user_id": "f633d101-ae06-4bdb-b4de-13580daad5dc", "score": 3}'
+
+    {"id":"30583878-ec62-43b6-a755-24a54c334bfc","rated_at":"2026-07-02T00:35:13.345241","score":3,"song_id":"3ae88dfb-ac1b-4d7c-bfec-fef14ecccf55","user_id":"f633d101-ae06-4bdb-b4de-13580daad5dc"}
+
+Final request is to get the notifications for the song sharer again:
+
+    curl -X GET "http://localhost:9000/users/178764e6-ca0f-4ab0-b3a1-693744f26b7a/notifications?unread_only=false"
+    
+    {"count":1,"notifications":[{"body":"darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'.","created_at":"2026-07-01T23:50:40.594485","id":"1d3a183b-0aa1-4148-9173-046f304be6fe","read":false,"type":"song_added_to_playlist","user_id":"178764e6-ca0f-4ab0-b3a1-693744f26b7a"}]}
+
+This lines up with the user issue that the rating notification was not received.
+
+### How to get root cause
+
+I went to the `notification_service ` where `add_to_playlist` is called from `add_to_playlist`, based on the information I got from the seeded data and my reproduction. Lines 65-70 shows how the notification is send to the song sharer. In the same file, there is also `rate_song`, which is where the code gets and stores the rating.
+
 ### Root cause
 
-### Fix
+`rate_song` did not have any notification setup even though it is part of the `notification_service` and hence it stored the rating, but did not notify the song sharer.
 
+### Fix and side effects
+
+#### Fix
+
+The following code was added after Line 108(db.session.commit()):
+    ``` python
+    if song.shared_by != user_id:
+            create_notification(
+                user_id=song.shared_by,
+                notification_type="song_rated_by_user",
+                body=f"{rater.username} rated your song '{song.title}' as '{rating.score}'.",
+            )
+    ```
+The notification type, username and scores are added.
+
+After adding this change, I re-ran the setup from the reproduction section:
+
+    curl -X GET "http://localhost:9000/users/178764e6-ca0f-4ab0-b3a1-693744f26b7a/notifications?unread_only=false"
+    
+    {"count":2,"notifications":[{"body":"darius rated your song 'Midnight Drive' as '3'.","created_at":"2026-07-02T00:42:01.202869","id":"e70fa4c7-9e46-4eba-9e34-3c6a85af1241","read":false,"type":"song_rated_by_user","user_id":"178764e6-ca0f-4ab0-b3a1-693744f26b7a"},{"body":"darius added your song 'Midnight Drive' to the playlist 'Late Night Vibes'.","created_at":"2026-07-01T23:50:40.594485","id":"1d3a183b-0aa1-4148-9173-046f304be6fe","read":false,"type":"song_added_to_playlist","user_id":"178764e6-ca0f-4ab0-b3a1-693744f26b7a"}]}
+
+Compared to the last time, the song sharing user now gets a notification after another user has rated their song.
+
+#### Side effects
+
+This code change only affects `songs.py`, so unit testing and user testing confirms that the functionality did not break.
 
 #### Bug 5: The last song in a playlist never shows up
 
@@ -162,7 +308,11 @@ In `test_playlists.py`, `test_playlist_returns_all_songs` and `test_playlist_ret
 
 ### Fix and side effects
 
+#### Fix
+
 Fixing Line 66 to `for songs in songs` resolved the issue. The above tests also pass as a result.
 
-`get_playlist_songs` is only used in `playlists.py` and once, so the best way to check the fix worked was to re-rerun my request to the router and verify that it returns the 7 items.
+#### Side effects
+
+`get_playlist_songs` is only used in `playlists.py` and once, so the best way to check the fix worked was to re-rerun my request to the router and verify that it returns the 7 items, along with the unit tests.
 
