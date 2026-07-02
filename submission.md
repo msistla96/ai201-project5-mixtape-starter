@@ -362,11 +362,11 @@ FAILED tests/test_playlists.py::test_playlist_returns_songs_in_order - Assertion
 ## Commit Log for `bugfix/mixtape`
 
 ```
-19afee9 (HEAD -> bugfix/mixtape, origin/bugfix/mixtape) fix: listening streak kept getting reset; removed weekday check to prevent reset on Sundays
+4d32fab (HEAD -> bugfix/mixtape, origin/bugfix/mixtape) no-op: Modify submission.md to be consistent and readable
+19afee9 fix: listening streak kept getting reset; removed weekday check to prevent reset on Sundays
 45919a2 fix: listening_now() showed friends listening until yesterday from current time; corrected RECENT_THRESHOLD from 24 hours to 30 min to get recent listens upto 30 min
 8283cfc fix: user did not get notification for another user's rating on their song; added notification to rate_song
 ce57a73 fix: searching for a song provided duplicated results; current code works as intended; documented query behavior that failed reproduction
 8753470 fix: get_playlist_songs() does not return the last song; changed songs[:-1] to songs
 2dfdeaa (origin/main, origin/HEAD, main) Add .gitignore file and update README with setup instructions
-7b64551 initial commit
 ```
