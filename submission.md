@@ -179,7 +179,7 @@ Surprisingly, it returned only one result:
 {"count":1,"results":[{"album":null,"artist":"Borough Kings","genre":"rap","id":"48508db6-8b2c-4a82-b064-687df84a075a","share_note":null,"shared_at":"2026-06-30T20:06:15.807978","shared_by":"f597475e-3afb-42e6-8740-30df30635a5d","tags":["rap","hip-hop","boom bap"],"title":"Crown Heights Anthem"}]}
 ```
 
-### Root Cause
+### How the Root Cause Was Found
 
 Using AI and further research, I found the following explanation: `session.query(Song)...all()` (the legacy `Query` API) generates the same SQL as the 2.0-style `select()`, but adds an extra post-processing step that auto-dedupes full-entity results by primary key.
 
@@ -208,9 +208,23 @@ Here's a query and response that produces duplicate song results (one per tag), 
 
 Note that there are multiple ways to remove the deduplication behavior, but it only applies when querying full entities.
 
+### Root cause
+
+The query can fail if the query gets ported to the SQLAlchemy>=2.0.x newer `select() + execute()` and when it does, the root cause of duplication is `outerjoin()`. Under the hood, it returns multiple songs for each tag. 
+
 ### Fix and Side Effects
 
-**Fix:** No fix was needed for the current code. The test `test_search_no_duplicates_single_tag_song` in `test_search.py` passes as-is. This is a classic case of external library behavior affecting the outcome of a piece of code that reads, on its own, like a potential bug, but the underlying behavior produces a different (correct) result that no test could have caught in advance.
+Adding a TODO and note about this matter for any future engineer who ports to the newer query format is the helpful for understanding what can fail. 
+
+However, `outer_join` is not actually needed here: the query does not use any attributes from `song_tags` as the Song model lazy loads its Tags directly from `song_tags`. Removing 
+    ``` python
+            .outerjoin(song_tags, Song.id == song_tags.c.song_id)
+    ```
+from the query removes the problematic code without affecting the results.
+
+Specfically, the test `test_search_no_duplicates_single_tag_song` in `test_search.py` passes.
+
+This is a classic case of library behavior affecting the outcome of a piece of code that, on its own works correctly, but its underlying behavior could produce a different result that no test could have caught in advance.
 
 ---
 
