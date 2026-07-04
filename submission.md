@@ -383,11 +383,15 @@ FAILED tests/test_playlists.py::test_playlist_returns_songs_in_order - Assertion
 ## Commit Log for `bugfix/mixtape`
 
 ```
-4d32fab (HEAD -> bugfix/mixtape, origin/bugfix/mixtape) no-op: Modify submission.md to be consistent and readable
-19afee9 fix: listening streak kept getting reset; removed weekday check to prevent reset on Sundays
-45919a2 fix: listening_now() showed friends listening until yesterday from current time; corrected RECENT_THRESHOLD from 24 hours to 30 min to get recent listens upto 30 min
-8283cfc fix: user did not get notification for another user's rating on their song; added notification to rate_song
-ce57a73 fix: searching for a song provided duplicated results; current code works as intended; documented query behavior that failed reproduction
-8753470 fix: get_playlist_songs() does not return the last song; changed songs[:-1] to songs
-2dfdeaa (origin/main, origin/HEAD, main) Add .gitignore file and update README with setup instructions
+1aaf760 (HEAD -> bug3fix, origin/bug3fix) fix:  searching for a song provided duplicated results; removed uneeded outerjoin
+0b8a26c (origin/main, origin/HEAD, main) Fix documentation on regression tests for Bug 2
+0d1d81c no-op: Update commit log in submission.md
+1407735 no-op: Modify submission.md to be consistent and readable
+aba20c3 fix: listening streak kept getting reset; removed weekday check to prevent reset on Sundays
+4bad6d5 fix: listening_now() showed friends listening until yesterday from current time; corrected RECENT_THRESHOLD from 24 hours to 30 min to get recent listens upto 30 min
+342a7d4 fix: user did not get notification for another user's rating on their song; added notification to rate_song
+486f823 fix: searching for a song provided duplicated results; current code works as intended; documented query behavior that failed reproduction
+0128cf3 fix: get_playlist_songs() does not return the last song; changed songs[:-1] to songs
+2dfdeaa Add .gitignore file and update README with setup instructions
+7b64551 initial commit
 ```
