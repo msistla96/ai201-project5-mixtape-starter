@@ -136,9 +136,16 @@ The three events and their fixed timestamps:
 - **Second curl (count: 1):** by the time it re-ran, server "now" had passed 24:00:40 and 24:05:40, pushing the cutoff past kenji's and simone's timestamps (`now − 30min > 23:30:40` and `> 23:35:40`), so they dropped out. Darius's 23:40:40 was still `≥ now − 30min`, so he's the only one left.
 - **Validity going forward:** darius will also disappear once real time passes 24:10:40 (i.e., 23:40:40 + 30min). After that, this same seeded data will return `count: 0` for this user.
 
-**Regression Tests:** Since live testing against real time isn't always feasible, I also added tests simulating these scenarios under `tests/test_streaks.py`. Had these tests existed beforehand, this bug would have been caught early.
+#### Regression Tests
 
-**Side Effects:** Regression and user testing confirmed that no functionality broke. `get_friends_listening_now` is only used in `feed.py`, so this change does not affect other services.
+Since live testing against real time isn't always feasible, I also added tests simulating these scenarios under `tests/test_feed.py`. The following tests specifically validates for the events following the threshold of recent 30 minutes:
+`test_recent_event_is_included`: Checks for the relevant events to be included within the time window.
+`test_stale_event_is_excluded`: Checks for whether the list of event updates when the time window for has passed.
+Running these tests would have caught the bug early on.
+
+#### Side Effects
+
+Regression and user testing confirmed that no functionality broke. `get_friends_listening_now` is only used in `feed.py`, so this change does not affect other services.
 
 ---
 
